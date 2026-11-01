@@ -1,0 +1,400 @@
+---
+title: "Problem Set #4 STATS 506"
+author: "Jun Su"
+format:
+  html:
+    embed-resources: true
+    code-fold: true
+    html-math-method: mathml
+---
+
+**GitHub Repository:** [Homework 4 Repository](https://github.com/sujun-cmd/stats506-ps04)
+
+## Q1. Tidyverse: New Zealand
+
+
+
+### Q1A. Vote Counts by Year and Type
+
+Generate a table of total votes across parties for each year and vote type, sorted by vote count.
+
+ 
+```{r}
+library(dplyr)
+
+nzge <- readRDS("data/nzge.rds")
+
+nzge %>%
+  select(voting_type, election_year, votes) %>%
+  group_by(election_year, voting_type) %>%
+  summarise(total_votes = sum(votes), .groups = "drop") %>%
+  arrange(desc(total_votes))
+```
+
+### Q1B. Candidate Vote Proportions in 2014
+
+Report each party's proportion of Candidate votes in the 2014 election. Present a table sorted by percentage of votes.
+
+```{r}
+nzge %>%
+  filter(election_year == 2014 & voting_type == "Candidate") %>%
+  group_by(party) %>%
+  summarise(total_votes = sum(votes), .groups = "drop") %>%
+  mutate(percentage = total_votes / sum(total_votes) * 100) %>%
+  arrange(desc(percentage))
+```
+
+### Q1C. Winning Parties by Year
+
+Produce a table identifying the party that won the Candidate vote and the party that won the Party vote in each year.
+ 
+```{r}
+nzge %>%
+  group_by(election_year, voting_type, party) %>%
+  summarise(total_votes = sum(votes), .groups = "drop") %>%
+  group_by(election_year, voting_type) %>%
+  slice_max(total_votes, n = 1, with_ties = TRUE) %>%
+  ungroup() %>%
+  arrange(desc(total_votes))
+```
+
+## Q2. Tidyverse: Tennis
+
+
+
+### Q2A. Number of Tournaments
+
+How many tournaments took place in 2019?
+
+ 
+```{r}
+library(readr)
+library(dplyr)
+
+tennis <- read_csv("data/atp_matches_2019.csv")
+tennis %>%
+  group_by(tourney_id) %>%
+  summarise(n_matches = n(), .groups = "drop") %>%
+  summarise(n_tournaments = n())
+```
+There are 128 tournaments in 2019. 
+### Q2B. Players with Multiple Tournament Wins
+
+Did any player win more than one tournament? If so, how many players did so, and how many tournaments did the most winning player(s) win?
+ 
+```{r}
+tournament_wins <- tennis %>%
+  filter(round == "F") %>%
+  group_by(winner_id, winner_name) %>%
+  summarise(
+    n_tournaments = n_distinct(tourney_id),
+    .groups = "drop"
+  ) %>%
+  filter(n_tournaments > 1) %>%
+  arrange(desc(n_tournaments))
+tournament_wins$n_tournaments[1]
+
+length(tournament_wins$winner_id)
+```
+12 players win more than one tournament, the most winning player(s) won 5.
+### Q2C. Aces for Winners and Losers
+
+Is there evidence that winners have more aces than losers? If using a hypothesis test, remain within the tidyverse rather than using base R testing functionality.
+
+# H0: mean difference = 0
+# H1: mean difference > 0
+ 
+```{r}
+library(tidyr)
+library(infer)
+ace_data <- tennis %>%
+  select(w_ace, l_ace) %>%
+  drop_na(w_ace, l_ace) %>%
+  mutate(ace_diff = w_ace - l_ace)
+
+ 
+ace_data %>%
+  summarise(
+    n_matches = n(),
+    mean_winner_aces = mean(w_ace),
+    mean_loser_aces = mean(l_ace),
+    mean_difference = mean(ace_diff)
+  )
+
+ace_data %>%
+  t_test(
+    response = ace_diff,
+    mu = 0,
+    alternative = "greater"
+  )
+```
+p value = 1.530201e-34<0.05, reject H0, there's statistical evidence that winners have more aces than losers
+### Q2D. Highest Win Rate
+
+Identify the player(s) with the highest win rate among those who played at least five matches.
+
+```{r}
+wins <- tennis %>%
+  group_by(player_id = winner_id, player_name = winner_name) %>%
+  summarise(won_games = n(), .groups = "drop")
+
+losses <- tennis %>%
+  group_by(player_id = loser_id) %>%
+  summarise(lost_games = n(), .groups = "drop")
+
+wins %>%
+  full_join(losses, by = "player_id") %>%
+  mutate(
+    won_games = replace_na(won_games, 0L),
+    lost_games = replace_na(lost_games, 0L),
+    all_games_played = won_games + lost_games
+  ) %>%
+  filter(all_games_played >= 5) %>%
+  mutate(win_rate = won_games / all_games_played) %>%
+  slice_max(win_rate, n = 1, with_ties = TRUE)
+```
+
+The player with highest win rate is Rafael Nadal whose rate is 0.8695652.
+## Q3. Visualization
+
+ 
+ 
+
+### Q3A. Major and Minor Spikes
+
+How many major and minor spikes in cases were there?
+```{r}
+library(ggplot2)
+covid <- read_csv("data/us-states.csv")
+daily_cases <- covid %>%
+  group_by(date) %>%
+  summarise(
+    cases_avg = sum(cases_avg, na.rm = TRUE),
+    .groups = "drop"
+  )  
+# Find the spikes within the 5 observed peak periods
+ggplot(daily_cases, aes(date, cases_avg)) +
+  geom_line() +
+ 
+  scale_x_date(date_breaks = "6 months", date_labels = "%b %Y") +
+  scale_y_continuous(
+    labels = scales::label_comma(),
+    expand = expansion(mult = c(0.02, 0.15))
+  ) +
+  labs(
+    title = "Daily COVID-19 Cases Over Time (first look)",
+    x = NULL,
+    y = "Daily new cases (seven-day average)",
+    caption = "Source: The New York Times. Peaks selected within five periods."
+  ) +
+  theme(
+  panel.grid.minor = element_blank(),
+  plot.title = element_text(face = "bold"),
+  plot.margin = margin(t = 10, r = 35, b = 10, l = 10)
+)
+```
+
+
+ 
+We can see that these are 2 main peaks and 3 smaller peaks. Then, we will need to label these peaks.
+
+
+
+```{r}
+peaks <- daily_cases %>%
+  mutate(period = case_when(
+    date >= "2020-11-01" & date <= "2021-02-28" ~ 1,
+    date >= "2021-07-01" & date <= "2021-10-31" ~ 2,
+    date >= "2021-12-01" & date <= "2022-02-28" ~ 3,
+    date >= "2022-06-01" & date <= "2022-09-30" ~ 4,
+    date >= "2022-12-01" & date <= "2023-02-28" ~ 5
+  )) %>%
+  filter(!is.na(period)) %>%
+  group_by(period) %>%
+  slice_max(cases_avg, n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  mutate(label = paste(
+    ifelse(period %in% c(1, 3), "Major", "Minor"),
+    format(date, "%b %Y"),
+    sep = "\n"
+  ))
+
+# Plot the peaks
+
+ggplot(daily_cases, aes(date, cases_avg)) +
+  geom_line() +
+  geom_point(data = peaks) +
+  geom_text(data = peaks, aes(label = label),vjust = -0.3) +
+  scale_x_date(date_breaks = "6 months", date_labels = "%b %Y") +
+  scale_y_continuous(
+    labels = scales::label_comma(),
+    expand = expansion(mult = c(0.02, 0.15))
+  ) +
+  labs(
+    title = "Daily COVID-19 Cases Over Time",
+    x = NULL,
+    y = "Daily new cases (seven-day average)",
+    caption = "Source: The New York Times. Peaks selected within five periods."
+  ) +
+  theme(
+  panel.grid.minor = element_blank(),
+  plot.title = element_text(face = "bold"),
+  plot.margin = margin(t = 10, r = 35, b = 10, l = 10)
+) 
+   
+```
+I found two major spikes, one in Jan 2022, the other in Jan 2021. I also observed 3 relatively prominent minor peaks, with smaller fluctuations occurring earlier in the series. I treated small fluctuations (especially these early stages in 2020) within the same overall rise-and-fall cycle as part of a single peak rather than counting them separately.
+
+### Q3B. Highest and Lowest Rates per Population
+
+For the states with the highest and lowest overall rates per population, what differences appear in their trajectories over time?
+
+```{r}
+# Calculate the avg cases_avg_per_100k rate for each state during the whole COVID period
+state_rates <- covid %>%
+  filter(state %in% state.name) %>%
+  group_by(state) %>%
+  summarise(
+    mean_rate = mean(cases_avg_per_100k, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Select states with the highest and lowest rates
+selected_states <- bind_rows(
+  state_rates %>%
+    slice_max(mean_rate, n = 1) %>%
+    mutate(rate_group = "Highest"),
+  state_rates %>%
+    slice_min(mean_rate, n = 1) %>%
+    mutate(rate_group = "Lowest")
+)
+
+selected_states
+
+# Plot their trajectories over time
+covid %>%
+  inner_join(selected_states, by = "state") %>%
+  ggplot(aes(
+    x = date,
+    y = cases_avg_per_100k,
+    color = state
+  )) +
+  geom_line() +
+  scale_x_date(
+    date_breaks = "6 months",
+    date_labels = "%b %Y"
+  ) +
+  labs(
+    title = "COVID-19 Trends in States with Highest and Lowest Average Rates",
+    subtitle = "States selected by their mean daily case rate over available dates",
+    y = "Daily cases per 100k people (7d average)",
+    color = "State",
+    caption = "Source: The New York Times"
+  )  
+```
+The highest is Rhode Island while the lowest is Maryland.
+Both states reached their highest peaks in January 2022, at nearly the same time.
+1. Rhode Island had noticeably higher peaks in late 2020–early 2021 and January 2022.
+2. The highest seven-day average of daily new cases per 100,000 people was approximately 507 in Rhode Island and 222 in Maryland, making Rhode Island’s peak about 2.3 times Maryland’s.
+3. Both states saw sharp declines after their January 2022 peaks. Rhode Island also experienced a noticeable resurgence in the following spring.
+
+### Q3C. First Five Substantially Affected States
+
+Identify, to the best of your ability without a formal test, the first five states to experience Covid in a substantial way.
+ 
+```{r}
+# First, look at the early stages of COVID
+covid %>%
+  filter(
+    date < as.Date("2020-05-01"),
+    state %in% state.name
+  ) %>%
+  ggplot(aes(
+    x = date,
+    y = cases_avg_per_100k,
+    group = state
+  )) +
+  geom_line(alpha = 0.5) +
+  labs(
+    title = "Early COVID-19 Trends by State",
+    x = "Date",
+    y = "Daily cases per 100,000 people (seven-day average)"
+  ) +
+  theme_minimal()
+```
+We found that the cases increased sharply since mid march. Take 5 as a threshold of experiencing Covid in a substantial way. 
+```{r}
+first_reached <- covid %>%
+  filter(
+    state %in% state.name,
+    cases_avg_per_100k >= 5
+  ) %>%
+  group_by(state) %>%
+  summarise(
+    first_date = min(date),
+    .groups = "drop"
+  ) %>%
+  arrange(first_date)
+
+first_five <- first_reached %>%
+  slice_min(first_date, n = 5)
+
+first_five
+```
+New York, New Jersey, Louisiana, and Massachusetts were the first four states to reach the threshold for being substantially affected by COVID-19, with Connecticut and Michigan tied for fifth.
+```{r}
+first_points <- covid %>%
+  inner_join(
+    first_five,
+    by = c("state", "date" = "first_date")
+  )
+covid %>%
+  semi_join(first_five, by = "state") %>%
+  filter(
+    date >= as.Date("2020-03-01"),
+    date <= as.Date("2020-04-10")
+  ) %>%
+  ggplot(aes(
+    x = date,
+    y = cases_avg_per_100k,
+    color = state
+  )) +
+  geom_hline(
+    yintercept = 5,
+    linetype = "dashed",
+    color = "gray"
+  ) +
+  geom_line() +
+  geom_point(
+    data = first_points,
+  ) +
+  
+  scale_x_date(
+    limits = as.Date(c("2020-03-01", "2020-04-10")),
+    date_breaks = "1 week",
+    date_labels = "%b %d",
+    expand = expansion(mult = c(0.01, 0.02))
+  ) +
+  scale_color_brewer(palette = "Dark2") +
+  labs(
+    title = "Early COVID-19 Trends in the First Substantially Affected States",
+    subtitle = "6 states shown: Connecticut and Michigan tied for 5th",
+    x = NULL,
+    y = "Daily cases per 100,000 people\n(7d average)",
+    color = "State",
+    caption = paste(
+      "Dashed line: threshold of 5 daily cases per 100,000 residents.",
+      "Points: first dates reaching the threshold.",
+      "Source: The New York Times.",
+      sep = "\n"
+    )
+  )  
+  
+```
+
+## Attribution of Sources
+
+OpenAI ChatGPT was used to review my draft against the assignment
+requirements and to explain the help documents. I wrote, reviewed, and verified the final code
+myself.
+
